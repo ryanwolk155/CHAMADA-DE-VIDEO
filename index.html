@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WhatsApp Video Call</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --green: #25D366;
+    --green-dark: #128C7E;
+    --red: #FF3B30;
+  }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: #000;
+    margin: 0;
+    overflow: hidden;
+  }
+
+  .phone {
+    width: 100vw;
+    height: 100vh;
+    background: #000;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Remote video — preenche toda a tela */
+  .video-bg {
+    position: absolute;
+    inset: 0;
+    background: #000;
+    overflow: hidden;
+  }
+
+  #remoteVideo {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .noise {
+    position: absolute; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none; opacity: 0.4;
+  }
+
+  /* Top bar */
+  .top-bar {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    padding: 40px 20px 16px;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, transparent 100%);
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+  }
+
+  .status-row {
+    position: absolute;
+    top: 10px; right: 20px;
+    display: flex; gap: 6px; align-items: center;
+  }
+
+  .status-row span { color: #fff; font-size: 11px; font-weight: 500; }
+
+  .call-name {
+    color: #fff; font-size: 26px; font-weight: 600;
+    letter-spacing: -0.5px;
+    text-shadow: 0 1px 8px rgba(0,0,0,0.6);
+  }
+
+  .call-label { color: rgba(255,255,255,0.7); font-size: 13px; }
+
+  .call-timer {
+    color: rgba(255,255,255,0.9); font-size: 14px;
+    font-weight: 500; font-variant-numeric: tabular-nums;
+  }
+
+  /* Muted badge */
+  .muted-badge {
+    position: absolute; top: 10px; left: 16px;
+    background: rgba(255,59,48,0.85);
+    border-radius: 50px; padding: 4px 10px;
+    color: #fff; font-size: 11px; font-weight: 500;
+    display: none; align-items: center; gap: 4px;
+    z-index: 25; backdrop-filter: blur(4px);
+  }
+  .muted-badge.visible { display: flex; }
+
+  /* PiP — câmera do visitante */
+  .self-view {
+    position: absolute;
+    top: 140px; right: 16px;
+    width: 100px; height: 140px;
+    border-radius: 16px;
+    overflow: hidden;
+    border: 2px solid rgba(255,255,255,0.22);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.55);
+    z-index: 20; cursor: move;
+    transition: opacity 0.4s, transform 0.4s;
+  }
+
+  .self-view.hidden {
+    opacity: 0; pointer-events: none; transform: scale(0.85);
+  }
+
+  .self-view video {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);
+  }
+
+  .self-placeholder {
+    width: 100%; height: 100%;
+    background: linear-gradient(160deg, #1c1c2e, #2d2d44);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px;
+  }
+
+  /* Controls */
+  .controls {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    padding: 16px 20px 48px;
+    background: linear-gradient(to top, rgba(0,0,0,0.88) 0%, transparent 100%);
+    z-index: 10;
+    display: flex; align-items: center; justify-content: center; gap: 16px;
+  }
+
+  .btn {
+    display: flex; flex-direction: column;
+    align-items: center; gap: 7px;
+    background: none; border: none; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .btn:active .btn-circle { transform: scale(0.91); }
+
+  .btn-circle {
+    width: 56px; height: 56px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(255,255,255,0.16);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.1);
+    font-size: 21px;
+    transition: background 0.2s, transform 0.15s;
+  }
+
+  .btn-circle.active { background: rgba(255,255,255,0.88); }
+
+  .btn-circle.end {
+    background: var(--red);
+    width: 66px; height: 66px; font-size: 25px;
+  }
+
+  .btn-label { color: rgba(255,255,255,0.72); font-size: 10.5px; }
+
+  /* Ended screen */
+  .ended-screen {
+    position: absolute; inset: 0;
+    background: linear-gradient(160deg, #0a0a0a 0%, #111 100%);
+    display: none; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 14px; z-index: 50;
+    animation: fadeIn 0.35s ease;
+  }
+  .ended-screen.visible { display: flex; }
+
+  .ended-avatar {
+    width: 88px; height: 88px; border-radius: 50%;
+    background: linear-gradient(135deg, #25D366, #128C7E);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 40px; margin-bottom: 6px;
+  }
+
+  .ended-name { color: #fff; font-size: 24px; font-weight: 600; }
+  .ended-msg  { color: rgba(255,255,255,0.45); font-size: 14px; }
+  .ended-dur  { color: rgba(255,255,255,0.35); font-size: 13px; }
+
+  .btn-callback {
+    margin-top: 30px;
+    background: var(--green); color: #fff;
+    border: none; border-radius: 50px;
+    padding: 14px 36px; font-size: 15px; font-weight: 600;
+    cursor: pointer; font-family: 'Inter', sans-serif;
+    display: flex; align-items: center; gap: 8px;
+    transition: background 0.2s, transform 0.15s;
+  }
+  .btn-callback:active { transform: scale(0.96); background: #1ebe5a; }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: scale(1.02); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+</style>
+</head>
+<body>
+
+<div class="phone">
+  <!-- Vídeo remoto (o arquivo enviado) -->
+  <div class="video-bg">
+    <video id="remoteVideo" autoplay playsinline loop muted></video>
+    <div class="noise"></div>
+  </div>
+
+  <!-- Top bar -->
+  <div class="top-bar">
+    <div class="status-row">
+      <span>📶</span>
+      <span id="clockDisplay">00:00</span>
+    </div>
+    <div class="call-name">Nayara Santos</div>
+    <div class="call-timer" id="callTimer">00:00</div>
+  </div>
+
+  <!-- Muted indicator -->
+  <div class="muted-badge" id="mutedBadge">🎙️ Mudo</div>
+
+  <!-- PiP: câmera do visitante -->
+  <div class="self-view" id="selfView">
+    <video id="localVideo" autoplay playsinline muted style="display:none"></video>
+    <div class="self-placeholder" id="selfPlaceholder">🧑</div>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls">
+
+    <button class="btn" onclick="toggleMute()">
+      <div class="btn-circle" id="muteCircle">🎙️</div>
+      <span class="btn-label">Mudo</span>
+    </button>
+
+    <button class="btn" onclick="toggleSelfCam()">
+      <div class="btn-circle" id="selfCamCircle">📹</div>
+      <span class="btn-label">Câmera</span>
+    </button>
+
+    <button class="btn" onclick="endCall()">
+      <div class="btn-circle end">📵</div>
+      <span class="btn-label">Desligar</span>
+    </button>
+
+    <button class="btn" onclick="flipCamera()">
+      <div class="btn-circle" id="flipCircle">🔄</div>
+      <span class="btn-label">Virar</span>
+    </button>
+
+    <button class="btn" onclick="toggleSpeaker()">
+      <div class="btn-circle" id="speakerCircle">🔊</div>
+      <span class="btn-label">Alto-fal.</span>
+    </button>
+
+  </div>
+
+  <!-- Ended screen -->
+  <div class="ended-screen" id="endedScreen">
+    <div class="ended-avatar">👩</div>
+    <div class="ended-name">Nayara Santos</div>
+    <div class="ended-msg">Chamada encerrada</div>
+    <div class="ended-dur" id="endedDur"></div>
+    <button class="btn-callback" onclick="restartCall()">📹 Ligar novamente</button>
+  </div>
+</div>
+
+<script>
+  let isMuted = false, isSelfCamOff = false, isSpeakerOn = true;
+  let facingMode = 'user';
+  let localStream = null;
+  let timerInterval = null;
+  let seconds = 0;
+  let callActive = true;
+
+  // Relógio
+  function updateClock() {
+    const n = new Date();
+    document.getElementById('clockDisplay').textContent =
+      n.getHours().toString().padStart(2,'0') + ':' +
+      n.getMinutes().toString().padStart(2,'0');
+  }
+  updateClock();
+  setInterval(updateClock, 10000);
+
+  // Cronômetro
+  function startTimer() {
+    seconds = 0;
+    clearInterval(timerInterval);
+    timerInterval = setInterval(() => {
+      seconds++;
+      const m = Math.floor(seconds / 60).toString().padStart(2,'0');
+      const s = (seconds % 60).toString().padStart(2,'0');
+      document.getElementById('callTimer').textContent = `${m}:${s}`;
+    }, 1000);
+  }
+
+  function formatDuration(s) {
+    const m = Math.floor(s / 60), sec = s % 60;
+    return m > 0 ? `${m}min ${sec}s` : `${sec}s`;
+  }
+
+  // Carrega vídeo remoto
+  function loadRemoteVideo() {
+    const vid = document.getElementById('remoteVideo');
+    vid.src = 'call-video.mp4';
+    vid.play().catch(() => {});
+  }
+
+  // Câmera local
+  async function startCamera() {
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode }, audio: true });
+      const vid = document.getElementById('localVideo');
+      vid.srcObject = localStream;
+      vid.style.display = 'block';
+      document.getElementById('selfPlaceholder').style.display = 'none';
+    } catch(e) {
+      console.log('Câmera indisponível:', e.message);
+    }
+  }
+
+  async function stopLocalCamera() {
+    if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+    document.getElementById('localVideo').style.display = 'none';
+    document.getElementById('selfPlaceholder').style.display = 'flex';
+  }
+
+  // Mute
+  function toggleMute() {
+    isMuted = !isMuted;
+    if (localStream) localStream.getAudioTracks().forEach(t => t.enabled = !isMuted);
+    const c = document.getElementById('muteCircle');
+    c.textContent = isMuted ? '🔇' : '🎙️';
+    c.classList.toggle('active', isMuted);
+    document.getElementById('mutedBadge').classList.toggle('visible', isMuted);
+  }
+
+  // Toggle câmera própria (esconde/mostra PiP)
+  function toggleSelfCam() {
+    isSelfCamOff = !isSelfCamOff;
+    document.getElementById('selfView').classList.toggle('hidden', isSelfCamOff);
+    const c = document.getElementById('selfCamCircle');
+    c.textContent = isSelfCamOff ? '🚫' : '📹';
+    c.classList.toggle('active', isSelfCamOff);
+    if (localStream) localStream.getVideoTracks().forEach(t => t.enabled = !isSelfCamOff);
+  }
+
+  // Virar câmera
+  async function flipCamera() {
+    facingMode = facingMode === 'user' ? 'environment' : 'user';
+    const c = document.getElementById('flipCircle');
+    c.style.transform = 'rotate(180deg)';
+    setTimeout(() => c.style.transform = '', 400);
+    if (localStream) {
+      await stopLocalCamera();
+      await startCamera();
+      if (isMuted) localStream?.getAudioTracks().forEach(t => t.enabled = false);
+      if (isSelfCamOff) localStream?.getVideoTracks().forEach(t => t.enabled = false);
+    }
+  }
+
+  // Alto-falante
+  function toggleSpeaker() {
+    isSpeakerOn = !isSpeakerOn;
+    const c = document.getElementById('speakerCircle');
+    c.textContent = isSpeakerOn ? '🔊' : '🔇';
+    c.classList.toggle('active', !isSpeakerOn);
+  }
+
+  // Desligar
+  function endCall() {
+    if (!callActive) return;
+    callActive = false;
+    clearInterval(timerInterval);
+    stopLocalCamera();
+    document.getElementById('remoteVideo').pause();
+    document.getElementById('endedDur').textContent = `Duração: ${formatDuration(seconds)}`;
+    document.getElementById('endedScreen').classList.add('visible');
+  }
+
+  // Reiniciar
+  async function restartCall() {
+    callActive = true;
+    isMuted = false; isSelfCamOff = false; isSpeakerOn = true;
+    ['muteCircle','selfCamCircle','speakerCircle'].forEach(id => {
+      document.getElementById(id).classList.remove('active');
+    });
+    document.getElementById('muteCircle').textContent = '🎙️';
+    document.getElementById('selfCamCircle').textContent = '📹';
+    document.getElementById('speakerCircle').textContent = '🔊';
+    document.getElementById('mutedBadge').classList.remove('visible');
+    document.getElementById('selfView').classList.remove('hidden');
+    document.getElementById('callTimer').textContent = '00:00';
+    document.getElementById('endedScreen').classList.remove('visible');
+    document.getElementById('remoteVideo').play().catch(() => {});
+    startTimer();
+    await startCamera();
+  }
+
+  // PiP arrastável
+  const pip = document.getElementById('selfView');
+  let dragging = false, ox, oy;
+
+  pip.addEventListener('mousedown', e => {
+    dragging = true;
+    ox = e.clientX - pip.getBoundingClientRect().left;
+    oy = e.clientY - pip.getBoundingClientRect().top;
+    e.preventDefault();
+  });
+  pip.addEventListener('touchstart', e => {
+    dragging = true;
+    ox = e.touches[0].clientX - pip.getBoundingClientRect().left;
+    oy = e.touches[0].clientY - pip.getBoundingClientRect().top;
+  }, { passive: true });
+
+  document.addEventListener('mousemove', e => { if (dragging) movePip(e.clientX, e.clientY); });
+  document.addEventListener('touchmove', e => { if (dragging) movePip(e.touches[0].clientX, e.touches[0].clientY); }, { passive: true });
+  document.addEventListener('mouseup', () => dragging = false);
+  document.addEventListener('touchend', () => dragging = false);
+
+  function movePip(cx, cy) {
+    let x = Math.max(8, Math.min(window.innerWidth - pip.offsetWidth - 8, cx - ox));
+    let y = Math.max(40, Math.min(window.innerHeight - pip.offsetHeight - 80, cy - oy));
+    pip.style.left = x + 'px'; pip.style.top = y + 'px'; pip.style.right = 'auto';
+  }
+
+  // Init
+  (async () => {
+    loadRemoteVideo();
+    startTimer();
+    await startCamera();
+  })();
+</script>
+</body>
+</html>
